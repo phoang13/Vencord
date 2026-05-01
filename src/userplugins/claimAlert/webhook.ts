@@ -51,7 +51,7 @@ function formatWebhookContent(alertType: AlertType, dropCategory: DropCategory |
     let content = `**${title}**\nType: ${typeLabel}${categorySuffix}`;
 
     if (link) {
-        content = `${content}\n${link}`;
+        content = `${content}\n# ${link}`;
     }
 
     return content;
