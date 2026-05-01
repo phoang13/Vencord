@@ -70,7 +70,9 @@ export default definePlugin({
                     const dropCategory = alertType === "drop" ? getDropCategory(message) : null;
                     const notificationText = getNotificationText(alertType, dropCategory);
 
-                    showJumpToast(notificationText, message);
+                    if (settings.store.enableToasts) {
+                        showJumpToast(notificationText, message);
+                    }
                     void sendWebhookNotification(alertType, dropCategory, message);
 
                     if (settings.store.enableDesktopNotifications

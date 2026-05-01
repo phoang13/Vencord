@@ -20,6 +20,11 @@ const settings = definePluginSettings({
         description: "Enable desktop notifications",
         default: true
     },
+    enableToasts: {
+        type: OptionType.BOOLEAN,
+        description: "Show in-app toasts",
+        default: true
+    },
     thunderdomeMode: {
         type: OptionType.BOOLEAN,
         description: "Only alert for drops in thunderdome",
