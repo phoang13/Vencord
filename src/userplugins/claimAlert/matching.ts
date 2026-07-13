@@ -40,10 +40,12 @@ function normalizeUrl(url: string | undefined): string {
     if (trimmed) {
         try {
             const parsed = new URL(trimmed);
+            parsed.search = "";
             parsed.hash = "";
             normalized = parsed.toString();
         } catch {
-            normalized = trimmed;
+            // Best-effort cleanup for non-URL strings.
+            normalized = trimmed.split("?")[0]?.split("#")[0] ?? trimmed;
         }
     }
 
@@ -146,6 +148,10 @@ export function messageHasAnyKeywordInEmbeds(message: Message): boolean {
     return messageHasAnyKeywordsInEmbeds(message, allKeywords);
 }
 
+export function messageHasEmbedText(message: Message, text: string): boolean {
+    return messageHasAnyKeywordsInEmbeds(message, [text]);
+}
+
 export function getAlertType(message: Message): AlertType | null {
     let alertType: AlertType | null = null;
 
@@ -157,6 +163,16 @@ export function getAlertType(message: Message): AlertType | null {
     if (alertType === null && messageHasAnyKeywordsInEmbeds(message, getAdditionalKeywords())) alertType = "drop";
 
     return alertType;
+}
+
+export function getClutchModeStatus(message: Message): "on" | "off" | null {
+    const content = String((message as any).content ?? "").toLowerCase();
+    const hasStart = content.includes("clutch! next drop") || messageHasKeywordInEmbeds(message, "clutch! next drop");
+    const hasEnd = content.includes("clutch mode is ending") || messageHasKeywordInEmbeds(message, "clutch mode is ending");
+
+    if (hasEnd) return "off";
+    if (hasStart) return "on";
+    return null;
 }
 
 export function isAlertTypeEnabled(alertType: AlertType): boolean {
@@ -177,9 +193,16 @@ function getEmbedImageUrls(message: Message): string[] {
 
     for (const embed of message.embeds as any[]) {
         if (embed?.image?.url) rawUrls.push(embed.image.url);
+        if (embed?.image?.proxyURL) rawUrls.push(embed.image.proxyURL);
+        if (embed?.image?.proxy_url) rawUrls.push(embed.image.proxy_url);
+        if (embed?.thumbnail?.url) rawUrls.push(embed.thumbnail.url);
+        if (embed?.thumbnail?.proxyURL) rawUrls.push(embed.thumbnail.proxyURL);
+        if (embed?.thumbnail?.proxy_url) rawUrls.push(embed.thumbnail.proxy_url);
         if (Array.isArray(embed?.images)) {
             for (const image of embed.images) {
                 if (image?.url) rawUrls.push(image.url);
+                if (image?.proxyURL) rawUrls.push(image.proxyURL);
+                if (image?.proxy_url) rawUrls.push(image.proxy_url);
             }
         }
     }

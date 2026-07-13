@@ -15,6 +15,11 @@ export function setWebhookTestHandler(handler: () => void): void {
 }
 
 const settings = definePluginSettings({
+    enableClickTrigger: {
+        type: OptionType.BOOLEAN,
+        description: "Trigger the local click hook automatically",
+        default: true
+    },
     enableDesktopNotifications: {
         type: OptionType.BOOLEAN,
         description: "Enable desktop notifications",
@@ -24,6 +29,11 @@ const settings = definePluginSettings({
         type: OptionType.BOOLEAN,
         description: "Show in-app toasts",
         default: true
+    },
+    autoJumpToDropMessage: {
+        type: OptionType.BOOLEAN,
+        description: "Automatically jump to the drop message instead of showing alerts",
+        default: false
     },
     thunderdomeMode: {
         type: OptionType.BOOLEAN,

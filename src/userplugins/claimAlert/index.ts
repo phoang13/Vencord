@@ -14,18 +14,79 @@ import {
     getNotificationText,
     isAlertTypeEnabled,
     messageHasAnyKeywordInEmbeds,
-    shouldNotifyDropByImage
+    messageHasEmbedText,
+    shouldNotifyDropByImage,
+    getClutchModeStatus
 } from "./matching";
 import { clearStackedToasts, jumpToEmbedMessage, showJumpToast } from "./toasts";
 import { sendWebhookNotification, sendWebhookTest } from "./webhook";
 
 const TARGET_BOT_ID = "840306394531889164"; // id of starbot
+const CLAIM_CONGRATULATIONS_TEXT = "congratulations <@265921835827200000>";
 const THUNDERDOME_CHANNEL_ID = "1040654663353110679"; // channel id of tdome
+const LOCAL_SERVER_BASE_URL = "http://127.0.0.1:5000";
+const CLAIM_VERIFICATION_TIMEOUT_MS = 90_000;
 const ACTIVE_NOTIFICATIONS = new Set<Notification>();
+const PENDING_CLAIM_VERIFICATIONS = new Map<string, ReturnType<typeof setTimeout>>();
+let clutchMode = false;
 
 setWebhookTestHandler(() => {
     void sendWebhookTest();
 });
+
+function postLocalServerEvent(path: string, body?: string): void {
+    const url = `${LOCAL_SERVER_BASE_URL}/${path}`;
+    const init: RequestInit = {
+        method: "POST"
+    };
+
+    if (body !== undefined) {
+        init.headers = {
+            "Content-Type": "text/plain; charset=utf-8"
+        };
+        init.body = body;
+    }
+
+    fetch(url, init).catch(err => {
+        console.error(`Local server post failed for ${path}:`, err);
+    });
+}
+
+function triggerClick(): void {
+    postLocalServerEvent("click");
+}
+
+function triggerClaimed(): void {
+    postLocalServerEvent("claimed", "claimed");
+}
+
+function clearPendingClaimVerification(channelId: string): void {
+    const timeout = PENDING_CLAIM_VERIFICATIONS.get(channelId);
+
+    if (timeout) {
+        clearTimeout(timeout);
+        PENDING_CLAIM_VERIFICATIONS.delete(channelId);
+    }
+}
+
+function scheduleClaimVerification(channelId: string): void {
+    clearPendingClaimVerification(channelId);
+
+    const timeout = setTimeout(() => {
+        PENDING_CLAIM_VERIFICATIONS.delete(channelId);
+    }, CLAIM_VERIFICATION_TIMEOUT_MS);
+
+    PENDING_CLAIM_VERIFICATIONS.set(channelId, timeout);
+}
+
+function messageHasClaimConfirmation(message: Message): boolean {
+    return Boolean(
+        message.author?.id === TARGET_BOT_ID
+        && message.embeds?.length
+        && messageHasEmbedText(message, CLAIM_CONGRATULATIONS_TEXT)
+    );
+}
+
 export default definePlugin({
     name: "ClaimAlert",
     description: "Alerts for drops.",
@@ -36,7 +97,23 @@ export default definePlugin({
     flux: {
         MESSAGE_CREATE({ message, optimistic }: { message: Message; optimistic: boolean; }) {
             // Gate on message source and basic filters first.
+
             let shouldHandle = !optimistic;
+            const clutchStatus = getClutchModeStatus(message);
+
+            if (clutchStatus === "on") {
+                clutchMode = true;
+            }
+
+            if (clutchStatus === "off") {
+                clutchMode = false;
+            }
+
+            if (shouldHandle && message.channel_id && PENDING_CLAIM_VERIFICATIONS.has(message.channel_id) && messageHasClaimConfirmation(message)) {
+                clearPendingClaimVerification(message.channel_id);
+                triggerClaimed();
+                return;
+            }
 
             if (shouldHandle && (!message?.author || message.author.id !== TARGET_BOT_ID)) {
                 shouldHandle = false;
@@ -53,6 +130,8 @@ export default definePlugin({
 
             if (shouldHandle) {
                 // Resolve the alert type and check per-type settings.
+
+
                 const alertType = getAlertType(message);
                 let canNotify = Boolean(alertType);
 
@@ -70,28 +149,39 @@ export default definePlugin({
                     const dropCategory = alertType === "drop" ? getDropCategory(message) : null;
                     const notificationText = getNotificationText(alertType, dropCategory);
 
-                    if (settings.store.enableToasts) {
-                        showJumpToast(notificationText, message);
+                    if (settings.store.autoJumpToDropMessage) {
+                        jumpToEmbedMessage(message);
+                    } else {
+                        if (settings.store.enableToasts) {
+                            showJumpToast(notificationText, message);
+                        }
+                        void sendWebhookNotification(alertType, dropCategory, message);
+
+                        if (settings.store.enableDesktopNotifications
+                            && typeof Notification !== "undefined"
+                            && Notification.permission === "granted") {
+                            const notification = new Notification("Claim Alert", {
+                                body: notificationText,
+                                silent: false
+                            });
+                            ACTIVE_NOTIFICATIONS.add(notification);
+
+                            notification.onclick = () => {
+                                jumpToEmbedMessage(message);
+                                notification.close();
+                            };
+
+                            notification.onclose = () => {
+                                ACTIVE_NOTIFICATIONS.delete(notification);
+                            };
+                        }
                     }
-                    void sendWebhookNotification(alertType, dropCategory, message);
 
-                    if (settings.store.enableDesktopNotifications
-                        && typeof Notification !== "undefined"
-                        && Notification.permission === "granted") {
-                        const notification = new Notification("Claim Alert", {
-                            body: notificationText,
-                            silent: false
-                        });
-                        ACTIVE_NOTIFICATIONS.add(notification);
-
-                        notification.onclick = () => {
-                            jumpToEmbedMessage(message);
-                            notification.close();
-                        };
-
-                        notification.onclose = () => {
-                            ACTIVE_NOTIFICATIONS.delete(notification);
-                        };
+                    if (settings.store.enableClickTrigger && !clutchMode) { // Only trigger clicks if not in clutch mode
+                        triggerClick();
+                        if (message.channel_id) {
+                            scheduleClaimVerification(message.channel_id);
+                        }
                     }
                 }
             }
@@ -108,6 +198,9 @@ export default definePlugin({
 
     stop() {
         clearStackedToasts();
+        for (const channelId of PENDING_CLAIM_VERIFICATIONS.keys()) {
+            clearPendingClaimVerification(channelId);
+        }
 
         for (const notification of ACTIVE_NOTIFICATIONS) {
             notification.close();
