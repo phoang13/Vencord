@@ -6,6 +6,7 @@
 import { Devs } from "@utils/constants";
 import definePlugin from "@utils/types";
 import { Message } from "@vencord/discord-types";
+import { UserStore } from "@webpack/common";
 
 import settings, { setWebhookTestHandler } from "./settings";
 import {
@@ -14,7 +15,7 @@ import {
     getNotificationText,
     isAlertTypeEnabled,
     messageHasAnyKeywordInEmbeds,
-    messageHasEmbedText,
+    messageHasEmbedPattern,
     shouldNotifyDropByImage,
     getClutchModeStatus
 } from "./matching";
@@ -22,7 +23,6 @@ import { clearStackedToasts, jumpToEmbedMessage, showJumpToast } from "./toasts"
 import { sendWebhookNotification, sendWebhookTest } from "./webhook";
 
 const TARGET_BOT_ID = "840306394531889164"; // id of starbot
-const CLAIM_CONGRATULATIONS_TEXT = "congratulations <@265921835827200000>";
 const THUNDERDOME_CHANNEL_ID = "1040654663353110679"; // channel id of tdome
 const LOCAL_SERVER_BASE_URL = "http://127.0.0.1:5000";
 const CLAIM_VERIFICATION_TIMEOUT_MS = 90_000;
@@ -79,11 +79,23 @@ function scheduleClaimVerification(channelId: string): void {
     PENDING_CLAIM_VERIFICATIONS.set(channelId, timeout);
 }
 
+function getClaimCongratulationsPattern(): RegExp | null {
+    const currentUserId = UserStore.getCurrentUser()?.id;
+
+    if (!currentUserId) return null;
+
+    return new RegExp(`congratulations\\s+(?:<@!?${currentUserId}>|@[^\\s>]+)`, "i");
+}
+
 function messageHasClaimConfirmation(message: Message): boolean {
+    const pattern = getClaimCongratulationsPattern();
+
+    if (!pattern) return false;
+
     return Boolean(
         message.author?.id === TARGET_BOT_ID
         && message.embeds?.length
-        && messageHasEmbedText(message, CLAIM_CONGRATULATIONS_TEXT)
+        && messageHasEmbedPattern(message, pattern)
     );
 }
 

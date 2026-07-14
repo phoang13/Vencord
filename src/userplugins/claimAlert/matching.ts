@@ -152,6 +152,33 @@ export function messageHasEmbedText(message: Message, text: string): boolean {
     return messageHasAnyKeywordsInEmbeds(message, [text]);
 }
 
+export function messageHasEmbedPattern(message: Message, pattern: RegExp): boolean {
+    const flags = pattern.flags.includes("i") ? pattern.flags : `${pattern.flags}i`;
+    const normalizedPattern = new RegExp(pattern.source, flags);
+
+    for (const embed of message.embeds) {
+        const embedData = embed as any;
+        const fields = Array.isArray(embedData.fields) ? embedData.fields : [];
+        const searchableParts: string[] = [
+            embedData.rawTitle ?? embedData.title,
+            embedData.rawDescription ?? embedData.description,
+            embedData.author?.name,
+            embedData.footer?.text
+        ];
+
+        for (const field of fields as any[]) {
+            searchableParts.push(`${field.rawName ?? field.name ?? ""} ${field.rawValue ?? field.value ?? ""}`);
+        }
+
+        for (const part of searchableParts) {
+            if (!part) continue;
+            if (normalizedPattern.test(String(part))) return true;
+        }
+    }
+
+    return false;
+}
+
 export function getAlertType(message: Message): AlertType | null {
     let alertType: AlertType | null = null;
 
