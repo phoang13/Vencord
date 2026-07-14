@@ -25,7 +25,7 @@ import { sendWebhookNotification, sendWebhookTest } from "./webhook";
 const TARGET_BOT_ID = "840306394531889164"; // id of starbot
 const THUNDERDOME_CHANNEL_ID = "1040654663353110679"; // channel id of tdome
 const LOCAL_SERVER_BASE_URL = "http://127.0.0.1:5000";
-const CLAIM_VERIFICATION_TIMEOUT_MS = 90_000;
+const CLAIM_VERIFICATION_TIMEOUT_MS = 10_000;
 const ACTIVE_NOTIFICATIONS = new Set<Notification>();
 const PENDING_CLAIM_VERIFICATIONS = new Map<string, ReturnType<typeof setTimeout>>();
 let clutchMode = false;
@@ -99,6 +99,16 @@ function messageHasClaimConfirmation(message: Message): boolean {
     );
 }
 
+function handleClaimVerification(message: Message): boolean {
+    if (!message.channel_id) return false;
+    if (!PENDING_CLAIM_VERIFICATIONS.has(message.channel_id)) return false;
+    if (!messageHasClaimConfirmation(message)) return false;
+
+    clearPendingClaimVerification(message.channel_id);
+    triggerClaimed();
+    return true;
+}
+
 export default definePlugin({
     name: "ClaimAlert",
     description: "Alerts for drops.",
@@ -121,11 +131,7 @@ export default definePlugin({
                 clutchMode = false;
             }
 
-            if (shouldHandle && message.channel_id && PENDING_CLAIM_VERIFICATIONS.has(message.channel_id) && messageHasClaimConfirmation(message)) {
-                clearPendingClaimVerification(message.channel_id);
-                triggerClaimed();
-                return;
-            }
+            if (shouldHandle && handleClaimVerification(message)) return;
 
             if (shouldHandle && (!message?.author || message.author.id !== TARGET_BOT_ID)) {
                 shouldHandle = false;
@@ -197,6 +203,10 @@ export default definePlugin({
                     }
                 }
             }
+        },
+
+        MESSAGE_UPDATE({ message }: { message: Message; }) {
+            handleClaimVerification(message);
         }
     },
 
